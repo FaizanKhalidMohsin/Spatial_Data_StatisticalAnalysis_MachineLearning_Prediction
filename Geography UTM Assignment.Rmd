@@ -1,0 +1,322 @@
+---
+title: "Geography UTM Assignment"
+author: "Faizan Khalid Mohsin"
+date: "March 16, 2018"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Sample Challenge 1 
+```{r}
+# pollution <- readOGR("https://raw.githubusercontent.com/gisUTM/GGR376/ master/Lab_2/paris_pollution.geojson")
+
+leaflet() %>% addTiles() %>% addMarkers(lng=-79.661285, lat=43.548038, popup="UTM Campus")
+
+names(providers)
+#providers 
+
+leaflet() %>% addProviderTiles(providers$OpenTopoMap) %>% setView(lng = -114.0708, lat = 51.0486, zoom = 7)
+
+ham_CT <- readOGR("https://raw.githubusercontent.com/gisUTM/ GGR376/master/houseValues.geojson")
+
+leaflet(data = ham_CT)%>% addTiles()%>% addPolygons()
+
+library(RColorBrewer)
+display.brewer.all()
+
+color_pal <- colorNumeric(palette = "Blues", domain = ham_CT$houseValue)
+color_pal 
+leaflet(data = ham_CT)%>% addTiles()%>% addPolygons(color = ~color_pal(houseValue), fillOpacity = 1, # by default it is semi-transparent
+                                                    weight = 2, # Adjust the stroke width of the boundaries, 
+                                                    default = 5 ) %>% addLegend("topright", pal = color_pal, values = ~houseValue, title = "Avg. House Price", labFormat = labelFormat(prefix = "$"), opacity = 1 )  
+                                                    
+#Continuous input, discrete colors                                                   
+qpal <- colorQuantile("Blues", ham_CT$houseValue, n = 5)
+leaflet(data = ham_CT)%>% addTiles()%>% addPolygons(color = ~qpal(houseValue), fillOpacity = 1, # by default it is semi-transparent
+                                                    weight = 2, # Adjust the stroke width of the boundaries 
+                                                    default = 5 )%>% addLegend("topright", pal = qpal, values = ~houseValue, title ="Avg. House Price", opacity = 1 )                                                   
+                                                    
+pollution_LatLong <- spTransform(pollution, CRS("+proj=longlat +datum=WGS84 +no_defs"))
+leaflet(pollution_LatLong)%>% addTiles()%>% addCircleMarkers()
+
+library("dismo")
+vor <- voronoi(pollution) spplot(vor, "PM")
+                                              
+```
+
+
+```{r data}
+
+library(leaflet)
+library(rgdal)
+rainfall_observations = read.csv("2018_rainfall_observations.csv")
+rainfall_prediction_locations = read.csv("2018_rainfall_prediction_locations.csv ")
+colnames(rainfall_observations)
+str(rainfall_observations)
+leaflet(data = rainfall_observations)%>% addTiles()%>% addCircleMarkers()
+leaflet() %>% addTiles() %>% addMarkers(lng=-79.661285, lat=43.548038, popup="UTM Campus")
+
+library("dismo")
+vor <- voronoi(rainfall_observations) 
+class(vor)
+?spplot
+spplot(vor, "rainfall")
+
+spplot(vor,"rainfall", sp.layout = list( rainfall_observations, col = "white", pch = 19) )
+
+plot(rainfall_observations)
+plot(rainfall_prediction_locations, add = TRUE, col = "RED")
+
+pred <- idw(rainfall ~ 1, # Formula for IDW and Ordinary Kriging are Value ~ 1 
+            rainfall_observations, # Input Data 
+            rainfall_prediction_locations, # Prediction Locations 
+            idp = 2 # Exponent (k) 
+            )
+#data(meuse.grid) 
+
+###########################################################
+             #     Attempt 2
+###########################################################
+
+library(gstat)
+# coordinates(rainfall_observations) <- c("x", "y") 
+coordinates(rainfall_observations) = ~x+y
+
+pred <- idw( formula = rainfall ~ 1, # Formula for IDW and Ordinary Kriging are Value ~ 1
+            rainfall_observations, # Input Data 
+            rainfall_prediction_locations, # Prediction Locations 
+            idp = 2  # Exponent (k) 
+            )
+
+?idw
+
+LOOCV <- krige.cv(rainfall~1, 
+                  rainfall_observations, 
+                  nfold = nrow(rainfall_observations), # Set the number of folds to the number of rows 
+                  set = list(idp = 2) # Set the k value for cross validation 
+                  )
+LOOCV@data
+
+
+RMSE_resid <- function(x){ 
+              return(sqrt(mean(x^2))) 
+}
+
+RMSE_resid(LOOCV@data$residual)
+
+MSE_resid <- function(x){ 
+              return((mean(x^2))) 
+}
+
+MSE_resid(LOOCV@data$residual)
+
+MAD_resid <- function(x){ 
+              return((mean(abs(x)))) 
+}
+
+MSE_resid(LOOCV@data$residual)
+
+# RMSE <- function(observed, predicted) {
+#   sqrt(mean((predicted - observed)^2, na.rm=TRUE))
+# }
+# null <- RMSE(mean(dsp$prec), dsp$prec)
+# null
+
+
+```
+
+```{r}
+library(sp) 
+library(gstat) 
+library(tidyverse)
+```
+
+
+## Kriging
+
+example:
+
+```{r pressure, echo=FALSE}
+
+
+data(meuse) 
+glimpse(meuse)
+class(meuse)
+
+coordinates(meuse) <- ~ x + y 
+bbox(meuse)
+
+hist(meuse@data$lead)
+
+# Add logLead variable 
+meuse@data$logLead <- log(meuse@data$lead)
+# Histogram of new variable 
+hist(meuse@data$logLead)
+
+
+lead.vgm <- variogram(logLead~1, meuse) 
+plot(lead.vgm)
+
+show.vgms()
+lead.fit <- fit.variogram(lead.vgm, model = vgm("Sph"))
+
+plot(lead.vgm, lead.fit)
+lead.fit
+
+convex_hull_point_ids <- meuse@coords %>% chull()
+
+convex_hull_points <- meuse@coords[ convex_hull_point_ids, ]%>% as.data.frame()
+plot(convex_hull_points)
+
+crds <- coordinates(convex_hull_points)
+
+
+poly <- sp::Polygon(crds)
+
+# Prepare data for a SpatialPolygons Object 
+ID <- "Minimum Boundary" 
+Pls <- Polygons(list(poly), ID=ID)
+SPls <- SpatialPolygons(list(Pls)) 
+plot(SPls) 
+class(SPls)
+
+
+grid <- makegrid(SPls, cellsize = 100)
+class(grid)
+str(grid)
+coordinates(grid) <- ~ x1+x2
+class(grid)
+plot(grid)
+
+# Check which grid cells are in the polygon 
+grid_in_poly <- sp::over(grid , SPls)
+grid_in_poly # NA were not in poly
+# Select points not NA using !is.na() 
+grid_predict <- grid[!is.na(grid_in_poly),]
+plot(grid_predict)
+
+
+lead_ordinary_krige <- krige(logLead~1, meuse, grid_predict, model=lead.fit)
+
+spplot(lead_ordinary_krige, "var1.pred")
+
+spplot(lead_ordinary_krige, "var1.var") 
+str(lead_ordinary_krige)
+
+LOOCV_krige_lead <-krige.cv(logLead~1, meuse, model=lead.fit )
+LOOCV_krige_lead@data$residual
+
+
+MSE_resid(LOOCV_krige_lead@data$residual)
+RMSE_resid(LOOCV_krige_lead@data$residual)
+MAD_resid(LOOCV_krige_lead@data$residual)
+```
+## Our code. 
+
+```{r}
+
+elev_obs=read.csv("2018_elevation_observations.csv")
+elev_pred_loc = read.csv("2018_elevation_prediction_locations.csv")
+
+glimpse(elev_obs)
+class(elev_obs)
+
+coordinates(elev_obs) <- ~ x + y 
+bbox(elev_obs)
+
+hist(elev_obs@data$elevation)
+
+# Add logLead variable 
+elev_obs@data$logElev <- log(elev_obs@data$elevation)
+# Histogram of new variable 
+hist(elev_obs@data$logElev)
+
+
+Elev.vgm <- variogram(logElev~1, elev_obs) 
+plot(Elev.vgm)
+
+show.vgms()
+Elev.fit <- fit.variogram(Elev.vgm, model = vgm("Sph"))
+
+###########################
+plot(Elev.vgm, Elev.fit)
+Elev.fit
+###########################
+
+convex_hull_point_ids <- elev_obs@coords %>% chull()
+
+convex_hull_points <- elev_obs@coords[ convex_hull_point_ids, ]%>% as.data.frame()
+plot(convex_hull_points)
+
+crds <- coordinates(convex_hull_points)
+
+
+poly <- sp::Polygon(crds)
+
+# Prepare data for a SpatialPolygons Object 
+ID <- "Minimum Boundary" 
+Pls <- Polygons(list(poly), ID=ID)
+SPls <- SpatialPolygons(list(Pls)) 
+plot(SPls) 
+class(SPls)
+
+
+grid <- makegrid(SPls, cellsize = 100)
+class(grid)
+str(grid)
+coordinates(grid) <- ~ x1+x2
+class(grid)
+plot(grid)
+
+# Check which grid cells are in the polygon 
+grid_in_poly <- sp::over(grid , SPls)
+grid_in_poly # NA were not in poly
+# Select points not NA using !is.na() 
+grid_predict <- grid[!is.na(grid_in_poly),]
+plot(grid_predict)
+
+
+Elev_ordinary_krige <- krige(logElev~1, elev_obs, grid_predict, model=Elev.fit)
+
+spplot(Elev_ordinary_krige, "var1.pred")
+
+spplot(Elev_ordinary_krige, "var1.var") 
+str(Elev_ordinary_krige)
+
+LOOCV_krige_Elev <-krige.cv(logElev~1, elev_obs, model=Elev.fit )
+LOOCV_krige_Elev@data$residual
+
+
+MSE_resid(LOOCV_krige_Elev@data$residual)
+RMSE_resid(LOOCV_krige_Elev@data$residual)
+MAD_resid(LOOCV_krige_Elev@data$residual)
+```
+
+```{r}
+
+library(sp)
+library(gstat) 
+data(meuse) 
+coordinates(meuse)=~x+y 
+v1 = variogram(log(zinc)~1,meuse) 
+v2 = variogram(log(cadmium)~1,meuse) 
+m1 = fit.variogram(v1, vgm(1, "Sph", 800, 1)) 
+m2 = fit.variogram(v2, vgm(1, "Sph", 800, 1)) 
+plot(gamma~dist, v2, ylim = c(0, 1.05*max(v2$gamma)),col='red', ylab = 
+'semivariance', xlab = 'distance') 
+lines(variogramLine(m2, 1500), col='red') 
+points(gamma~dist, v1, col='blue') 
+lines(variogramLine(m1, 1500), col='blue') 
+
+
+
+```
+
+
+
+ENd
