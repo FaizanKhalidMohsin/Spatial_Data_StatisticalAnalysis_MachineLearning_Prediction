@@ -1,0 +1,1 @@
+# Spatial_Data_StatisticalAnalysis_MachineLearning_Prediction
